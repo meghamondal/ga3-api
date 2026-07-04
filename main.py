@@ -469,11 +469,16 @@ async def extract_q7(body: Q7Request):
 # Q4 Helper
 # ----------------------------------------------------
 
+from dateutil.parser import parse
+
+
 def coerce(value, typ):
+
     if value is None:
         return None
 
     try:
+
         t = typ.lower()
 
         if t in ["integer", "int"]:
@@ -483,6 +488,7 @@ def coerce(value, typ):
             return float(value)
 
         if t == "boolean":
+
             if isinstance(value, bool):
                 return value
 
@@ -492,9 +498,14 @@ def coerce(value, typ):
                 "yes",
             ]
 
+        if t == "date":
+
+            return parse(str(value)).date().isoformat()
+
         return str(value)
 
     except Exception:
+
         return None
     
 # ----------------------------------------------------
@@ -515,6 +526,9 @@ async def dynamic_extract(request: Request):
     prompt = (
         "Extract information from the text.\n\n"
         "Return ONLY valid JSON.\n"
+        "Return EXACTLY the keys provided in the schema.\n"
+        "No extra keys.\n"
+        "No missing keys.\n"
         "The JSON MUST contain EXACTLY these keys:\n\n"
         f"{json.dumps(schema, indent=2)}\n\n"
         "Rules:\n"
