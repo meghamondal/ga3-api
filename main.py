@@ -564,3 +564,43 @@ async def dynamic_extract(request: Request):
         k: coerce(out.get(k), schema[k])
         for k in keys
     }
+
+
+class RankRequest(BaseModel):
+    query: str
+    candidates: list[str]
+
+
+# ----------------------------------------------------
+# Q8
+# Semantic Search Ranking
+# ----------------------------------------------------
+
+@app.post("/rank")
+async def rank(body: RankRequest):
+
+    texts = [body.query] + body.candidates
+
+    vectors = await embeddings(texts)
+
+    query_vector = vectors[0]
+    candidate_vectors = vectors[1:]
+
+    scores = []
+
+    for index, vector in enumerate(candidate_vectors):
+
+        score = cosine_similarity(query_vector, vector)
+
+        scores.append((index, score))
+
+    scores.sort(
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    ranking = [idx for idx, _ in scores[:3]]
+
+    return {
+        "ranking": ranking
+    }
