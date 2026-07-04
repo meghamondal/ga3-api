@@ -604,3 +604,76 @@ async def rank(body: RankRequest):
     return {
         "ranking": ranking
     }
+
+
+
+class SolveRequest(BaseModel):
+    problem: str
+
+# ----------------------------------------------------
+# Q9
+# Arithmetic Word Problem Solver
+# ----------------------------------------------------
+
+@app.post("/solve")
+async def solve(body: SolveRequest):
+
+    prompt = f"""
+You are an expert mathematical reasoning assistant.
+
+Solve the following arithmetic word problem carefully.
+
+Instructions:
+
+- Ignore irrelevant or distracting numbers.
+- Perform the calculations step by step.
+- Double-check the arithmetic.
+- Return ONLY valid JSON.
+- Do not use markdown.
+- The answer must be a JSON number (not a string).
+
+Return EXACTLY this format:
+
+{{
+  "reasoning": "...",
+  "answer": 0
+}}
+
+Problem:
+
+{body.problem}
+"""
+
+    try:
+
+        response = await chat(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model=config.TEXT_MODEL,
+            max_tokens=1000,
+        )
+
+        out = parse_json(response)
+
+        answer = out.get("answer")
+
+        try:
+            answer = int(float(answer))
+        except Exception:
+            answer = 0
+
+        reasoning = str(out.get("reasoning", ""))
+
+    except Exception:
+
+        reasoning = ""
+        answer = 0
+
+    return {
+        "reasoning": reasoning,
+        "answer": answer,
+    }
