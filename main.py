@@ -197,25 +197,82 @@ async def extract(request: Request):
     text = body.get("text", "")
     schema = body.get("schema", {})
 
-    prompt = (
-        "You are a strict invoice parser.\n"
-        "Return JSON that matches this contract EXACTLY.\n\n"
+    prompt = f"""
+    You are an expert information extraction engine.
 
-        "vendor: string\n"
-        "currency: ISO4217 code\n"
-        "total_amount: integer\n"
-        "invoice_date: YYYY-MM-DD\n"
-        "due_in_days: integer\n"
-        "is_paid: boolean\n"
-        "priority: one of low normal high urgent\n"
-        "contact_email: lowercase\n"
-        "line_items: array of {sku, quantity, unit_price}\n"
-        "item_count: integer\n\n"
+    Your task is to extract structured information from the invoice/document.
 
-        f"SCHEMA:\n{json.dumps(schema)}\n\n"
+    Return ONLY valid JSON.
 
-        f"DOCUMENT:\n{text}"
-    )
+    IMPORTANT:
+    - Return JSON ONLY.
+    - Do NOT explain.
+    - Do NOT return the schema.
+    - Do NOT wrap JSON inside markdown.
+    - Use the provided schema ONLY as the output contract.
+
+    The output MUST match the schema exactly.
+
+    Extraction Rules:
+
+    - vendor:
+      Exact company/person issuing the invoice.
+
+    - currency:
+      ISO 4217 currency code.
+      Examples:
+      ₹ or Rs. -> INR
+      $ -> USD
+      € -> EUR
+      £ -> GBP
+      ¥ -> JPY
+
+    - total_amount:
+      Integer only.
+      Ignore commas.
+      Ignore currency symbols.
+
+    - invoice_date:
+      Convert to YYYY-MM-DD.
+
+    - due_in_days:
+      Net 30 -> 30
+      Two weeks -> 14
+      Pay within 45 days -> 45
+
+    - is_paid:
+      true if paid.
+      false if unpaid.
+
+    - priority:
+      low
+      normal
+      high
+      urgent
+
+    - contact_email:
+      Lowercase.
+
+    - line_items:
+      Preserve order.
+      Each item has:
+      sku
+      quantity
+      unit_price
+
+    - item_count:
+      Number of objects in line_items.
+
+    Use null if a value cannot be extracted.
+
+    JSON Schema:
+
+    {json.dumps(schema, indent=2)}
+
+    Document:
+
+    {text}
+    """
 
     try:
         response = await chat(
@@ -227,8 +284,8 @@ async def extract(request: Request):
         out = parse_json(response)
 
     except Exception as e:
-        print("Q3 ERROR:", repr(e))
-        raise
+        print("Q7 ERROR:", repr(e))
+        out = {}
 
     return out
 
@@ -309,14 +366,88 @@ class Q7Request(BaseModel):
 
 @app.post("/extract-q7")
 async def extract_q7(body: Q7Request):
+    text = body.text
+    schema = body.schema
+    prompt = f"""
+    You are an expert information extraction engine.
 
-    prompt = (
-        "Read the document and return ONLY valid JSON.\n\n"
-        "Return JSON that matches the provided schema exactly.\n"
-        "Use null if a field cannot be extracted.\n\n"
-        f"SCHEMA:\n{json.dumps(body.schema, indent=2)}\n\n"
-        f"DOCUMENT:\n{body.text}"
-    )
+    Your task is to extract structured information from the invoice/document.
+
+    Return ONLY valid JSON.
+
+    IMPORTANT:
+    - Return JSON ONLY.
+    - Do NOT explain.
+    - Do NOT return the schema.
+    - Do NOT wrap JSON inside markdown.
+    - Use the provided schema ONLY as the output contract.
+
+    The output MUST match the schema exactly.
+
+    Extraction Rules:
+
+    - vendor:
+      Exact company/person issuing the invoice.
+
+    - currency:
+      ISO 4217 currency code.
+      Examples:
+      ₹ or Rs. -> INR
+      $ -> USD
+      € -> EUR
+      £ -> GBP
+      ¥ -> JPY
+
+    - total_amount:
+      Integer only.
+      Ignore commas.
+      Ignore currency symbols.
+      Example:
+      "$12,480" -> 12480
+
+    - invoice_date:
+      Convert to YYYY-MM-DD.
+
+    - due_in_days:
+      Examples:
+      Net 30 -> 30
+      Due in two weeks -> 14
+      Pay within 45 days -> 45
+
+    - is_paid:
+      true if invoice says Paid / Paid in Full.
+      false if Awaiting Payment / Unpaid / Outstanding.
+
+    - priority:
+      One of:
+      low
+      normal
+      high
+      urgent
+
+    - contact_email:
+      Lowercase.
+
+    - line_items:
+      Preserve order.
+      Every item has:
+      sku
+      quantity
+      unit_price
+
+    - item_count:
+      Number of objects inside line_items.
+
+    Use null if a value cannot be extracted.
+
+    JSON Schema:
+
+    {json.dumps(schema, indent=2)}
+
+    Document:
+
+    {text}
+    """
 
     try:
 
@@ -329,10 +460,8 @@ async def extract_q7(body: Q7Request):
         out = parse_json(response)
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        print("Q7 ERROR:", repr(e))
+        out = {}
 
     return out
 
