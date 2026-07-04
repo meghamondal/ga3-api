@@ -1,13 +1,14 @@
 import os
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 # -----------------------------
 # User Configuration
 # -----------------------------
 
-# Your IITM email (set in Render environment variables)
 EMAIL = os.getenv("EMAIL", "")
-
-# Your AIPipe API Token (set in Render environment variables)
 AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN", "")
 
 # -----------------------------
@@ -26,3 +27,6 @@ EMBED_MODEL = "text-embedding-3-small"
 # -----------------------------
 
 REQUEST_TIMEOUT = 90
+
+print("EMAIL:", EMAIL)
+print("TOKEN FOUND:", bool(AIPIPE_TOKEN))

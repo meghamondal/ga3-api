@@ -1,16 +1,21 @@
 from typing import Any, Dict
+import json
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import config
 import prompts
+
 from utils import (
     chat,
     embeddings,
     parse_json,
     cosine_similarity,
 )
+
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(
     title="GA3 API",
@@ -30,6 +35,13 @@ app.add_middleware(
     allow_credentials=False,
 )
 
+
+# ----------------------------------------------------
+# Request Models
+# ----------------------------------------------------
+
+class InvoiceRequest(BaseModel):
+    invoice_text: str
 
 # ----------------------------------------------------
 # Root Endpoint
@@ -98,3 +110,306 @@ async def answer_image(request: Request):
         "answer": str(answer)
     }
 
+# ----------------------------------------------------
+# Q3
+# Invoice Extraction
+# ----------------------------------------------------
+
+@app.post("/extract")
+async def extract(request: Request):
+    body = await request.json()
+
+    # ---------- Q3 ----------
+    if "invoice_text" in body:
+        text = body.get("invoice_text", "")
+
+        prompt = f"""
+        You are an invoice extraction engine.
+
+        Return ONLY valid JSON.
+
+        Use EXACTLY these keys:
+
+        {{
+          "invoice_no": string | null,
+          "date": string | null,
+          "vendor": string | null,
+          "amount": number | null,
+          "tax": number | null,
+          "currency": string | null
+        }}
+
+        Rules:
+        - invoice_no = invoice number.
+        - date MUST be ISO format YYYY-MM-DD.
+        - amount = subtotal BEFORE tax.
+        - Never return the grand total.
+        - tax = tax amount only.
+        - currency must be the ISO currency code.
+          Examples:
+          Rs., ₹ -> INR
+          $ -> USD
+          € -> EUR
+          £ -> GBP
+          ¥ -> JPY
+        - amount and tax MUST be JSON numbers.
+        - Never include currency symbols.
+        - Use null if a value is missing.
+
+        Invoice:
+
+        {body.invoice_text}
+        """
+
+        try:
+            response = await chat(
+                [{"role": "user", "content": prompt}],
+                model=config.TEXT_MODEL,
+                max_tokens=600
+            )
+
+            out = parse_json(response)
+
+        except Exception as e:
+            print("Q3 ERROR:", repr(e))
+            raise
+
+        keys = [
+            "invoice_no",
+            "date",
+            "vendor",
+            "amount",
+            "tax",
+            "currency"
+        ]
+
+        return {k: out.get(k) for k in keys}
+
+    # ---------- Q7 ----------
+    text = body.get("text", "")
+    schema = body.get("schema", {})
+
+    prompt = (
+        "You are a strict invoice parser.\n"
+        "Return JSON that matches this contract EXACTLY.\n\n"
+
+        "vendor: string\n"
+        "currency: ISO4217 code\n"
+        "total_amount: integer\n"
+        "invoice_date: YYYY-MM-DD\n"
+        "due_in_days: integer\n"
+        "is_paid: boolean\n"
+        "priority: one of low normal high urgent\n"
+        "contact_email: lowercase\n"
+        "line_items: array of {sku, quantity, unit_price}\n"
+        "item_count: integer\n\n"
+
+        f"SCHEMA:\n{json.dumps(schema)}\n\n"
+
+        f"DOCUMENT:\n{text}"
+    )
+
+    try:
+        response = await chat(
+            [{"role": "user", "content": prompt}],
+            model=config.TEXT_MODEL,
+            max_tokens=1500
+        )
+
+        out = parse_json(response)
+
+    except Exception as e:
+        print("Q3 ERROR:", repr(e))
+        raise
+
+    return out
+
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class Q3Request(BaseModel):
+    invoice_text: str
+
+
+@app.post("/extract-q3")
+async def extract_q3(body: Q3Request):
+
+    prompt = f"""
+You are an invoice extraction engine.
+
+Return ONLY valid JSON.
+
+Use EXACTLY these keys:
+
+{{
+  "invoice_no": string | null,
+  "date": string | null,
+  "vendor": string | null,
+  "amount": number | null,
+  "tax": number | null,
+  "currency": string | null
+}}
+
+Rules:
+- invoice_no = invoice number.
+- date MUST be ISO format YYYY-MM-DD.
+- amount = subtotal BEFORE tax.
+- Never return the grand total.
+- tax = tax amount only.
+- currency must be the ISO currency code.
+  Examples:
+  Rs., ₹ -> INR
+  $ -> USD
+  € -> EUR
+  £ -> GBP
+  ¥ -> JPY
+- amount and tax MUST be JSON numbers.
+- Never include currency symbols.
+- Use null if a value is missing.
+
+Invoice:
+
+{body.invoice_text}
+"""
+
+    try:
+
+        response = await chat(
+            [{"role": "user", "content": prompt}],
+            model=config.TEXT_MODEL,
+            max_tokens=600,
+        )
+
+        out = parse_json(response)
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
+    return out
+
+
+# Q7 from pydantic import BaseModel
+from typing import Dict, Any
+
+class Q7Request(BaseModel):
+    text: str
+    schema: Dict[str, Any]
+
+
+@app.post("/extract-q7")
+async def extract_q7(body: Q7Request):
+
+    prompt = (
+        "Read the document and return ONLY valid JSON.\n\n"
+        "Return JSON that matches the provided schema exactly.\n"
+        "Use null if a field cannot be extracted.\n\n"
+        f"SCHEMA:\n{json.dumps(body.schema, indent=2)}\n\n"
+        f"DOCUMENT:\n{body.text}"
+    )
+
+    try:
+
+        response = await chat(
+            [{"role": "user", "content": prompt}],
+            model=config.TEXT_MODEL,
+            max_tokens=1200,
+        )
+
+        out = parse_json(response)
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
+    return out
+
+# ----------------------------------------------------
+# Q4 Helper
+# ----------------------------------------------------
+
+def coerce(value, typ):
+    if value is None:
+        return None
+
+    try:
+        t = typ.lower()
+
+        if t in ["integer", "int"]:
+            return int(float(value))
+
+        if t in ["float", "number"]:
+            return float(value)
+
+        if t == "boolean":
+            if isinstance(value, bool):
+                return value
+
+            return str(value).lower() in [
+                "true",
+                "1",
+                "yes",
+            ]
+
+        return str(value)
+
+    except Exception:
+        return None
+    
+# ----------------------------------------------------
+# Q4
+# Dynamic Schema Extraction
+# ----------------------------------------------------
+
+@app.post("/dynamic-extract")
+async def dynamic_extract(request: Request):
+
+    body = await request.json()
+
+    text = body.get("text", "")
+    schema = body.get("schema", {})
+
+    keys = list(schema.keys())
+
+    prompt = (
+        "Extract information from the text.\n\n"
+        "Return ONLY valid JSON.\n"
+        "The JSON MUST contain EXACTLY these keys:\n\n"
+        f"{json.dumps(schema, indent=2)}\n\n"
+        "Rules:\n"
+        "- Dates -> YYYY-MM-DD\n"
+        "- integer -> JSON integer\n"
+        "- float/number -> JSON number\n"
+        "- boolean -> true/false\n"
+        "- string -> plain text\n"
+        "- Use null if a value cannot be found.\n\n"
+        f"TEXT:\n{text}"
+    )
+
+    try:
+
+        response = await chat(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model=config.TEXT_MODEL,
+            max_tokens=800,
+        )
+
+        out = parse_json(response)
+
+    except Exception:
+
+        out = {}
+
+    return {
+        k: coerce(out.get(k), schema[k])
+        for k in keys
+    }
