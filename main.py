@@ -158,7 +158,7 @@ async def extract(request: Request):
 
         Invoice:
 
-        {body.invoice_text}
+        {text}
         """
 
         try:
@@ -172,7 +172,15 @@ async def extract(request: Request):
 
         except Exception as e:
             print("Q3 ERROR:", repr(e))
-            raise
+
+            out = {
+                "invoice_no": None,
+                "date": None,
+                "vendor": None,
+                "amount": None,
+                "tax": None,
+                "currency": None,
+            }
 
         keys = [
             "invoice_no",
