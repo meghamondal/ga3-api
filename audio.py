@@ -136,6 +136,16 @@ async def answer_audio(body: AudioRequest):
         explicit_stats = parsed.get("explicit_stats", {})
         num_rows = parsed.get("num_rows")
 
+        # Recover column names from explicit_stats if the LLM omitted them
+        if not columns and explicit_stats:
+            columns = []
+
+            for value in explicit_stats.values():
+                if isinstance(value, dict):
+                    for key in value.keys():
+                        if key not in columns:
+                            columns.append(key)
+
         last_debug_info["parsed"] = parsed
 
     except Exception as e:
