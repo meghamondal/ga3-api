@@ -1,11 +1,18 @@
 from typing import Any, Dict
 import json
+import httpx
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+import base64
+from statistics import mean, median, pstdev, pvariance, mode
+
 import config
 import prompts
+
+from audio import router
+
 
 from utils import (
     chat,
@@ -22,7 +29,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.include_router(router)
 
+'''
+# ----------------------------------------------------
+# Q6 Debug
+# ----------------------------------------------------
+
+last_debug_info = {}
+'''
 # ----------------------------------------------------
 # CORS
 # ----------------------------------------------------
@@ -677,3 +692,147 @@ Problem:
         "reasoning": reasoning,
         "answer": answer,
     }
+
+'''
+
+######################################## Q6 ###########################################################################
+
+class AudioRequest(BaseModel):
+    audio_id: str
+    audio_base64: str
+
+@app.get("/debug")
+async def debug():
+    return last_debug_info
+
+# ----------------------------------------------------
+# Q6
+# Audio Statistics
+# ----------------------------------------------------
+
+@app.post("/answer-audio")
+async def answer_audio(body: AudioRequest):
+
+    global last_debug_info
+
+    last_debug_info = {
+        "audio_id": body.audio_id
+    }
+
+    audio_b64 = body.audio_base64
+    transcript = ""
+
+    try:
+
+        audio = base64.b64decode(audio_b64)
+
+        async with httpx.AsyncClient(
+            timeout=120
+        ) as client:
+
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text":
+                                "Transcribe this Korean audio accurately. "
+                                "Return ONLY the Korean transcript."
+                            },
+                            {
+                                "inlineData": {
+                                    "mimeType": "audio/mp3",
+                                    "data": audio_b64,
+                                }
+                            },
+                        ]
+                    }
+                ]
+            }
+
+            response = await client.post(
+                "https://aipipe.org/geminiv1beta/models/gemini-2.5-flash-lite:generateContent",
+                headers={
+                    "Authorization":
+                    f"Bearer {config.AIPIPE_TOKEN}"
+                },
+                json=payload,
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+            transcript = (
+                data["candidates"][0]
+                ["content"]["parts"][0]["text"]
+                .strip()
+            )
+
+    except Exception as e:
+
+        last_debug_info["error"] = str(e)
+
+        transcript = ""
+
+    last_debug_info["transcript"] = transcript
+
+    prompt = (
+        "The following Korean transcript describes a dataset.\n"
+        "Extract the dataset and requested statistics.\n\n"
+        "Return ONLY valid JSON in this format:\n"
+        "{\n"
+        '  "columns": [],\n'
+        '  "data_rows": [],\n'
+        '  "requested_stats": [],\n'
+        '  "explicit_stats": {}\n'
+        "}\n\n"
+        "Allowed statistic names:\n"
+        "mean, std, variance, min, max, median, mode, "
+        "range, allowed_values, value_range, correlation\n\n"
+        f"TRANSCRIPT:\n{transcript}"
+    )
+
+    columns = []
+    data_rows = []
+    requested_stats = []
+    explicit_stats = {}
+
+    try:
+
+        response = await chat(
+            [{"role": "user", "content": prompt}],
+            model="gpt-4o",
+            max_tokens=1500,
+        )
+
+        parsed = parse_json(response)
+
+        columns = parsed.get("columns", [])
+        data_rows = parsed.get("data_rows", [])
+        requested_stats = parsed.get("requested_stats", [])
+        explicit_stats = parsed.get("explicit_stats", {})
+
+        last_debug_info["parsed"] = parsed
+
+    except Exception as e:
+
+        last_debug_info["parse_error"] = str(e)
+
+    return {
+        "rows": 0,
+        "columns": [],
+        "mean": {},
+        "std": {},
+        "variance": {},
+        "min": {},
+        "max": {},
+        "median": {},
+        "mode": {},
+        "range": {},
+        "allowed_values": {},
+        "value_range": {},
+        "correlation": []
+    }
+
+    '''
