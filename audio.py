@@ -1,5 +1,6 @@
 import base64
 import httpx
+import time
 import pandas as pd
 
 from fastapi import APIRouter
@@ -27,6 +28,8 @@ class AudioRequest(BaseModel):
 # ----------------------------------------------------
 
 last_debug_info = {}
+
+start = time.perf_counter()
 
 @router.get("/debug")
 async def debug():
@@ -97,6 +100,13 @@ async def answer_audio(body: AudioRequest):
 
     last_debug_info["transcript"] = transcript
 
+    last_debug_info["gemini_seconds"] = round(
+        time.perf_counter() - start,
+        2
+    )
+
+    gpt_start = time.perf_counter()
+
     # 2. Extract structured JSON using GPT-4o
     prompt = (
         "The transcript (Korean) describes a tabular dataset and statistics.\n"
@@ -147,6 +157,15 @@ async def answer_audio(body: AudioRequest):
                             columns.append(key)
 
         last_debug_info["parsed"] = parsed
+
+        last_debug_info["gpt_seconds"] = round(
+            time.perf_counter() - gpt_start,
+            2
+            )
+        last_debug_info["total_seconds"] = round(
+            time.perf_counter() - start,
+            2
+            )
 
     except Exception as e:
         last_debug_info["parse_error"] = str(e)
