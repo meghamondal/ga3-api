@@ -247,14 +247,28 @@ async def answer_audio(body: AudioRequest):
         last_debug_info["pandas_error"] = str(e)
 
     # 4. Update with explicit stats that were stated verbatim in the audio transcript
-    for stat_name, stat_values in explicit_stats.items():
-        if (
-            stat_name in result
-            and isinstance(result[stat_name], dict)
-            and isinstance(stat_values, dict)
-        ):
-            result[stat_name].update(stat_values)
-        elif stat_name == "correlation" and isinstance(stat_values, list):
-            result["correlation"] = stat_values
+    for key, value in explicit_stats.items():
+        # Case 1:
+        # {"median":{"income":45000}}
+        if key in result and isinstance(result[key], dict):
+            result[key].update(value)
+
+        # Case 2:
+        # {"성별":{"allowed_values":["남성","여성"]}}
+        elif isinstance(value, dict):
+
+            for stat_name, stat_value in value.items():
+
+                if stat_name == "allowed_values":
+                    result["allowed_values"][key] = stat_value
+
+                elif stat_name == "value_range":
+                    result["value_range"][key] = stat_value
+
+                elif stat_name in result and isinstance(result[stat_name], dict):
+                    result[stat_name][key] = stat_value
+
+        elif key == "correlation" and isinstance(value, list):
+            result["correlation"] = value
 
     return result
